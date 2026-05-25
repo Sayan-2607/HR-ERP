@@ -1,0 +1,615 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Authentication & Users ───
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  password      String
+  role          Role      @default(EMPLOYEE)
+  isActive      Boolean   @default(true)
+  lastLogin     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee      Employee?
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+enum Role {
+  SUPER_ADMIN
+  HR_ADMIN
+  HR_MANAGER
+  MANAGER
+  EMPLOYEE
+}
+
+// ─── Employee Hub ───
+model Employee {
+  id              String    @id @default(uuid())
+  employeeId      String    @unique
+  userId          String    @unique
+  firstName       String
+  lastName        String
+  email           String    @unique
+  phone           String?
+  avatar          String?
+  dateOfBirth     DateTime?
+  gender          Gender?
+  maritalStatus   String?
+  bloodGroup      String?
+  address         String?
+  city            String?
+  state           String?
+  country         String?
+  zipCode         String?
+
+  // Employment
+  designation     String
+  department      String
+  team            String?
+  reportingTo     String?
+  employmentType  EmploymentType @default(FULL_TIME)
+  joiningDate     DateTime
+  confirmationDate DateTime?
+  exitDate        DateTime?
+  status          EmployeeStatus @default(ACTIVE)
+
+  // Compensation
+  salary          Decimal?  @db.Decimal(12, 2)
+  bankName        String?
+  bankAccount     String?
+  ifscCode        String?
+  panNumber       String?
+  aadharNumber    String?
+
+  // Skills & metadata
+  skills          String[]
+  bio             String?
+  linkedIn        String?
+  attritionRisk   Float?    @default(0)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance      Attendance[]
+  leaveRequests   LeaveRequest[]
+  leaveBalances   LeaveBalance[]
+  payrolls        Payroll[]
+  performances    Performance[]
+  goals           Goal[]
+  feedbacks       FeedbackGiven[]    @relation("FeedbackGiver")
+  feedbacksReceived FeedbackGiven[]  @relation("FeedbackReceiver")
+  enrollments     CourseEnrollment[]
+  moodCheckins    MoodCheckin[]
+  recognitions    Recognition[]      @relation("RecognitionReceiver")
+  recognitionsGiven Recognition[]    @relation("RecognitionGiver")
+  tickets         Ticket[]
+  jobApplications Application[]
+
+  @@map("employees")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  FREELANCE
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_NOTICE
+  TERMINATED
+  ON_LEAVE
+  PROBATION
+}
+
+// ─── Attendance ───
+model Attendance {
+  id            String    @id @default(uuid())
+  employeeId    String
+  date          DateTime  @db.Date
+  clockIn       DateTime?
+  clockOut      DateTime?
+  totalHours    Float?
+  status        AttendanceStatus @default(PRESENT)
+  method        ClockMethod?
+  location      String?
+  latitude      Float?
+  longitude     Float?
+  notes         String?
+  isLateArrival Boolean   @default(false)
+  isEarlyExit   Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@map("attendance")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  WORK_FROM_HOME
+  ON_LEAVE
+  HOLIDAY
+}
+
+enum ClockMethod {
+  WEB
+  MOBILE
+  BIOMETRIC
+  QR_CODE
+  FACE_RECOGNITION
+  GEO_FENCE
+}
+
+// ─── Leave Management ───
+model LeaveRequest {
+  id          String      @id @default(uuid())
+  employeeId  String
+  leaveType   LeaveType
+  fromDate    DateTime    @db.Date
+  toDate      DateTime    @db.Date
+  totalDays   Float
+  reason      String
+  status      LeaveStatus @default(PENDING)
+  approvedBy  String?
+  approvedAt  DateTime?
+  comments    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("leave_requests")
+}
+
+model LeaveBalance {
+  id          String    @id @default(uuid())
+  employeeId  String
+  leaveType   LeaveType
+  total       Float
+  used        Float     @default(0)
+  remaining   Float
+  year        Int
+  updatedAt   DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveType, year])
+  @@map("leave_balances")
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  MATERNITY
+  PATERNITY
+  COMPENSATORY
+  UNPAID
+  BEREAVEMENT
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  WITHDRAWN
+}
+
+// ─── Payroll ───
+model Payroll {
+  id            String    @id @default(uuid())
+  employeeId    String
+  month         Int
+  year          Int
+  basicSalary   Decimal   @db.Decimal(12, 2)
+  hra           Decimal   @db.Decimal(12, 2) @default(0)
+  da            Decimal   @db.Decimal(12, 2) @default(0)
+  specialAllow  Decimal   @db.Decimal(12, 2) @default(0)
+  grossSalary   Decimal   @db.Decimal(12, 2)
+  pf            Decimal   @db.Decimal(12, 2) @default(0)
+  esi           Decimal   @db.Decimal(12, 2) @default(0)
+  tax           Decimal   @db.Decimal(12, 2) @default(0)
+  otherDeduct   Decimal   @db.Decimal(12, 2) @default(0)
+  totalDeduct   Decimal   @db.Decimal(12, 2) @default(0)
+  netSalary     Decimal   @db.Decimal(12, 2)
+  status        PayrollStatus @default(DRAFT)
+  paidAt        DateTime?
+  payslipUrl    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, month, year])
+  @@map("payrolls")
+}
+
+enum PayrollStatus {
+  DRAFT
+  PROCESSING
+  PROCESSED
+  PAID
+  ON_HOLD
+}
+
+// ─── Recruitment ATS ───
+model JobPosting {
+  id            String    @id @default(uuid())
+  title         String
+  department    String
+  location      String
+  type          EmploymentType @default(FULL_TIME)
+  experience    String?
+  salaryMin     Decimal?  @db.Decimal(12, 2)
+  salaryMax     Decimal?  @db.Decimal(12, 2)
+  description   String
+  requirements  String[]
+  skills        String[]
+  status        JobStatus @default(OPEN)
+  postedBy      String?
+  closingDate   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  applications  Application[]
+
+  @@map("job_postings")
+}
+
+model Application {
+  id            String    @id @default(uuid())
+  jobId         String
+  employeeId    String?
+  candidateName String
+  email         String
+  phone         String?
+  resumeUrl     String?
+  coverLetter   String?
+  experience    Int?
+  currentCtc    Decimal?  @db.Decimal(12, 2)
+  expectedCtc   Decimal?  @db.Decimal(12, 2)
+  aiScore       Float?
+  aiSummary     String?
+  stage         RecruitmentStage @default(APPLIED)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  job       JobPosting @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  employee  Employee?  @relation(fields: [employeeId], references: [id])
+
+  @@map("applications")
+}
+
+enum JobStatus {
+  DRAFT
+  OPEN
+  ON_HOLD
+  CLOSED
+  FILLED
+}
+
+enum RecruitmentStage {
+  APPLIED
+  SCREENING
+  PHONE_INTERVIEW
+  TECHNICAL
+  HR_ROUND
+  OFFER
+  HIRED
+  REJECTED
+}
+
+// ─── Performance ───
+model Performance {
+  id            String    @id @default(uuid())
+  employeeId    String
+  reviewCycle   String
+  year          Int
+  selfRating    Float?
+  managerRating Float?
+  finalRating   Float?
+  strengths     String?
+  improvements  String?
+  comments      String?
+  status        ReviewStatus @default(PENDING)
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("performances")
+}
+
+model Goal {
+  id            String    @id @default(uuid())
+  employeeId    String
+  title         String
+  description   String?
+  category      GoalCategory @default(PERFORMANCE)
+  targetDate    DateTime?
+  progress      Float     @default(0)
+  status        GoalStatus @default(NOT_STARTED)
+  keyResults    Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("goals")
+}
+
+model FeedbackGiven {
+  id            String    @id @default(uuid())
+  giverId       String
+  receiverId    String
+  type          FeedbackType @default(PEER)
+  rating        Float?
+  feedback      String
+  isAnonymous   Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  giver    Employee @relation("FeedbackGiver", fields: [giverId], references: [id])
+  receiver Employee @relation("FeedbackReceiver", fields: [receiverId], references: [id])
+
+  @@map("feedbacks")
+}
+
+enum ReviewStatus {
+  PENDING
+  SELF_REVIEW
+  MANAGER_REVIEW
+  CALIBRATION
+  COMPLETED
+}
+
+enum GoalCategory {
+  PERFORMANCE
+  DEVELOPMENT
+  PROJECT
+  TEAM
+}
+
+enum GoalStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  AT_RISK
+  COMPLETED
+  DEFERRED
+}
+
+enum FeedbackType {
+  SELF
+  PEER
+  MANAGER
+  SKIP_LEVEL
+  THREE_SIXTY
+}
+
+// ─── Learning Hub ───
+model Course {
+  id            String    @id @default(uuid())
+  title         String
+  description   String?
+  category      String
+  instructor    String?
+  duration      String?
+  thumbnail     String?
+  videoUrl      String?
+  content       Json?
+  level         CourseLevel @default(BEGINNER)
+  skills        String[]
+  isRequired    Boolean   @default(false)
+  status        CourseStatus @default(ACTIVE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  enrollments   CourseEnrollment[]
+
+  @@map("courses")
+}
+
+model CourseEnrollment {
+  id            String    @id @default(uuid())
+  employeeId    String
+  courseId       String
+  progress      Float     @default(0)
+  status        EnrollmentStatus @default(ENROLLED)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  certificate   String?
+  score         Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, courseId])
+  @@map("course_enrollments")
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum CourseStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  ENROLLED
+  IN_PROGRESS
+  COMPLETED
+  DROPPED
+}
+
+// ─── Employee Engagement ───
+model MoodCheckin {
+  id          String    @id @default(uuid())
+  employeeId  String
+  mood        MoodType
+  note        String?
+  date        DateTime  @db.Date
+  createdAt   DateTime  @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@map("mood_checkins")
+}
+
+model Recognition {
+  id          String    @id @default(uuid())
+  giverId     String
+  receiverId  String
+  badge       String
+  message     String
+  category    String?
+  likes       Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  giver    Employee @relation("RecognitionGiver", fields: [giverId], references: [id])
+  receiver Employee @relation("RecognitionReceiver", fields: [receiverId], references: [id])
+
+  @@map("recognitions")
+}
+
+enum MoodType {
+  GREAT
+  GOOD
+  OKAY
+  LOW
+  BAD
+}
+
+// ─── Helpdesk ───
+model Ticket {
+  id          String    @id @default(uuid())
+  ticketNo    String    @unique
+  employeeId  String
+  category    TicketCategory
+  subject     String
+  description String
+  priority    Priority  @default(MEDIUM)
+  status      TicketStatus @default(OPEN)
+  assignedTo  String?
+  resolution  String?
+  slaDeadline DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  messages TicketMessage[]
+
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id        String   @id @default(uuid())
+  ticketId  String
+  sender    String
+  message   String
+  isInternal Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_messages")
+}
+
+enum TicketCategory {
+  IT_SUPPORT
+  HR_QUERY
+  PAYROLL
+  FACILITIES
+  ACCESS_REQUEST
+  GENERAL
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING
+  RESOLVED
+  CLOSED
+}
+
+// ─── Notifications ───
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String
+  isRead    Boolean   @default(false)
+  link      String?
+  createdAt DateTime  @default(now())
+
+  @@map("notifications")
+}
+
+// ─── Audit Log ───
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
